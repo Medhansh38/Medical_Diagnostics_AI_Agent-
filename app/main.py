@@ -5,7 +5,7 @@ import asyncio
 from fastapi.responses import StreamingResponse, PlainTextResponse
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse,FileResponse
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from octochains import Agent, Aggregator, Engine
@@ -14,55 +14,76 @@ import datetime
 
 
 # Import our new prompts file
-from Webapp import prompts
+from app import prompts
+from app.core.llm import get_llm
 
 load_dotenv()
 os.environ["OPENAI_API_KEY"] = os.getenv("GROQ_API_KEY")
 
 app = FastAPI()
 session_store = {}
-app.mount("/static", StaticFiles(directory="Webapp/static"), name="static")
 
-llm = ChatOpenAI(
-    model="llama-3.1-8b-instant",
-    temperature=0,
-    base_url="https://api.groq.com/openai/v1",
-    api_key=os.getenv("GROQ_API_KEY")
-)
+
+# --- DISK-BACKED SESSION STORAGE ---
+RESULTS_DIR = "results"
+os.makedirs(RESULTS_DIR, exist_ok=True)
+
+def save_session(session_id: str, data: dict):
+    filepath = os.path.join(RESULTS_DIR, f"{session_id}.json")
+    with open(filepath, "w", encoding="utf-8") as f:
+        json.dump(data, f)
+
+def get_session(session_id: str) -> dict:
+    filepath = os.path.join(RESULTS_DIR, f"{session_id}.json")
+    if os.path.exists(filepath):
+        with open(filepath, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return None
+
+
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
+
+
+@app.get("/")
+async def serve_index():
+    return FileResponse("app/static/index.html")
+
+
+llm = get_llm()
 
 # --- AGENTS ---
 class Cardiologist(Agent):
     def __init__(self, model="gpt-4o"):
         super().__init__(role="Cardiologist", goal="Identify arrhythmias or structural heart issues." , input_description="Medical Report")
-        self.llm = ChatOpenAI(model="llama-3.1-8b-instant",temperature=0,base_url="https://api.groq.com/openai/v1",  api_key=os.getenv("GROQ_API_KEY")) 
+        self.llm=llm
     def execute(self, medical_report: str) -> str:
         return self.llm.invoke(prompts.CARDIOLOGIST_PROMPT.format(medical_report=medical_report)).content
 
 class Psychologist(Agent):
     def __init__(self, model="gpt-4o"):
         super().__init__(role="Psychologist", goal="Identify mental health issues.", input_description="Medical Report")
-        self.llm = ChatOpenAI(model="llama-3.1-8b-instant",temperature=0,base_url="https://api.groq.com/openai/v1",  api_key=os.getenv("GROQ_API_KEY")) 
+        self.llm=llm
     def execute(self, medical_report: str) -> str:
         return self.llm.invoke(prompts.PSYCHOLOGIST_PROMPT.format(medical_report=medical_report)).content
 
 class Pulmonologist(Agent):
     def __init__(self, model="gpt-4o"):
         super().__init__(role="Pulmonologist", goal="Identify respiratory issues.", input_description="Medical Report")
-        self.llm = ChatOpenAI(model="llama-3.1-8b-instant",temperature=0,base_url="https://api.groq.com/openai/v1",  api_key=os.getenv("GROQ_API_KEY")) 
+        self.llm=llm
     def execute(self, medical_report: str) -> str:
         return self.llm.invoke(prompts.PULMONOLOGIST_PROMPT.format(medical_report=medical_report)).content
 
 class Neurologist(Agent):
     def __init__(self, model="gpt-4o"):
         super().__init__(role="Neurologist", goal="Identify neurological issues.", input_description="Medical Report")
-        self.llm = ChatOpenAI(model="llama-3.1-8b-instant",temperature=0,base_url="https://api.groq.com/openai/v1",  api_key=os.getenv("GROQ_API_KEY")) 
+        self.llm=llm
     def execute(self, medical_report: str) -> str:
         return self.llm.invoke(prompts.NEUROLOGIST_PROMPT.format(medical_report=medical_report)).content
 
 class MultidisciplinaryTeam(Aggregator):
     def __init__(self, model="gpt-4o"):
         super().__init__(role="MultidisciplinaryTeam", goal="Synthesize reports.")
-        self.llm = ChatOpenAI(model="llama-3.1-8b-instant",temperature=0,base_url="https://api.groq.com/openai/v1",  api_key=os.getenv("GROQ_API_KEY")) 
+        self.llm=llm
         
     def execute(self, agent_reports: dict) -> str:
         prompt = prompts.AGGREGATOR_PROMPT.format(
@@ -74,6 +95,7 @@ class MultidisciplinaryTeam(Aggregator):
         return self.llm.invoke(prompt).content
 
 # --- ENDPOINTS ---
+
 @app.post("/analyze")
 async def analyze_report(file: UploadFile = File(...)):
     content = await file.read()
@@ -161,5 +183,5 @@ async def chat_with_team(session_id: str = Form(...), message: str = Form(...)):
     if not context: return JSONResponse({"error": "Session not found"}, status_code=404)
     
     prompt = prompts.CHAT_PROMPT.format(traces=context['traces'], consensus=context['consensus'], message=message)
-    response = ChatOpenAI(model="llama-3.1-8b-instant",temperature=0.3,base_url="https://api.groq.com/openai/v1",api_key=os.getenv("GROQ_API_KEY")).invoke(prompt)
+    response = llm.invoke(prompt)
     return {"reply": response.content}
