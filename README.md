@@ -1,6 +1,7 @@
 # Medical Diagnostics AI Agent Framework
 
 This project is a sophisticated medical diagnostics tool that leverages the Octochains framework and FastAPI to coordinate a multidisciplinary medical team through parallel AI reasoning. By simulating isolated specialists, the system evaluates complex patient reports independently to prevent "groupthink" and cognitive bias, ultimately synthesizing a collaborative diagnosis.
+#Render link : https://medical-diagnostics-ai-agent.onrender.com
 
 # Features
 
@@ -16,7 +17,7 @@ Compliance & Traceability: Includes an endpoint to download a comprehensive, EU 
 
 Docker Ready: Includes a lightweight Dockerfile for quick containerized deployment.
 
-##Render link : https://medical-diagnostics-ai-agent.onrender.com
+
 
 # Setup and Installation
 
